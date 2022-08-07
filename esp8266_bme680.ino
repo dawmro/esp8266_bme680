@@ -99,6 +99,29 @@ void setup(void)
   checkIaqSensorStatus();
   
   timerMeasurement.start();
+
+  // Setup wifi
+  WiFi.mode(WIFI_STA);
+  wifiMulti.addAP(WIFI_SSID, WIFI_PASSWORD);
+
+  Serial.print("Connecting to wifi");
+  while (wifiMulti.run() != WL_CONNECTED) {
+    Serial.print(".");
+    delay(500);
+  }
+  Serial.println();
+
+  // Get accurate time
+  timeSync(TZ_INFO, "pool.ntp.org", "time.nis.gov");
+
+  // Check server connection
+  if (client.validateConnection()) {
+    Serial.print("Connected to InfluxDB: ");
+    Serial.println(client.getServerUrl());
+  } else {
+    Serial.print("InfluxDB connection failed: ");
+    Serial.println(client.getLastErrorMessage());
+  }
 }
  
 // Function that is looped forever
@@ -198,21 +221,38 @@ void takeMeasurement(void)
   { 
     double dewPoint = (dewPointFast(iaqSensor.temperature, iaqSensor.humidity));
     sensor.clearFields();
-    sensor.addField("time_trigger", String(time_trigger));
-    sensor.addField("rawTemperature", String(iaqSensor.rawTemperature));
-    sensor.addField("pressure", String(iaqSensor.pressure));
-    sensor.addField("rawHumidity", String(iaqSensor.rawHumidity));
-    sensor.addField("gasResistance", String(iaqSensor.gasResistance));
-    sensor.addField("iaq", String(iaqSensor.iaq));
-    sensor.addField("iaqAccuracy", String(iaqSensor.iaqAccuracy));
-    sensor.addField("temperature", String(iaqSensor.temperature));
-    sensor.addField("humidity", String(iaqSensor.humidity));
-    sensor.addField("dewPoint", String(dewPoint));
-    sensor.addField("staticIaq", String(iaqSensor.staticIaq));
-    sensor.addField("co2Equivalent", String(iaqSensor.co2Equivalent));
-    sensor.addField("breathVocEquivalent", String(iaqSensor.breathVocEquivalent));
+    sensor.addField("time_trigger", time_trigger);
+    sensor.addField("rawTemperature", iaqSensor.rawTemperature);
+    sensor.addField("pressure", iaqSensor.pressure);
+    sensor.addField("rawHumidity", iaqSensor.rawHumidity);
+    sensor.addField("gasResistance", iaqSensor.gasResistance);
+    sensor.addField("iaq", iaqSensor.iaq);
+    sensor.addField("iaqAccuracy", iaqSensor.iaqAccuracy);
+    sensor.addField("temperature", iaqSensor.temperature);
+    sensor.addField("humidity", iaqSensor.humidity);
+    sensor.addField("dewPoint", dewPoint);
+    sensor.addField("staticIaq", iaqSensor.staticIaq);
+    sensor.addField("co2Equivalent", iaqSensor.co2Equivalent);
+    sensor.addField("breathVocEquivalent", iaqSensor.breathVocEquivalent);
     
-    updateState();        
+    updateState();
+
+    Serial.print("Writing: ");
+    Serial.println(client.pointToLineProtocol(sensor));
+    
+    // If no Wifi signal, try to reconnect
+    if (wifiMulti.run() != WL_CONNECTED) 
+    {
+      Serial.println("Wifi connection lost");
+    }
+    
+    // Write point
+    if (!client.writePoint(sensor)) 
+    {
+      Serial.print("InfluxDB write failed: ");
+      Serial.println(client.getLastErrorMessage());
+    }  
+         
   } 
   else
   {
