@@ -1,5 +1,7 @@
 # esp8266_bme680
 Air quality monitor based on esp8266 and bme680.
+Portable.
+Uses WiFi connection to send data.
 
 ![alt text](https://github.com/dawmro/esp8266_bme680/blob/main/images/data_on_dashboard.PNG?raw=true)
 
