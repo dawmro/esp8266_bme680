@@ -3,6 +3,27 @@
 #include "ESP8266WiFi.h"
 #include "TickTwo.h" // sstaub
 
+#include <ESP8266WiFiMulti.h>
+ESP8266WiFiMulti wifiMulti;
+
+#include <InfluxDbClient.h>
+#include <InfluxDbCloud.h>
+
+#define WIFI_SSID "your-ssid"
+#define WIFI_PASSWORD "your-wifi-password"
+#define INFLUXDB_URL "https://europe-west1-1.gcp.cloud2.influxdata.com"
+#define INFLUXDB_TOKEN "your-INFLUXDB_TOKEN"
+#define INFLUXDB_ORG "your-INFLUXDB_ORG"
+#define INFLUXDB_BUCKET "your-INFLUXDB_BUCKET"
+
+// Set timezone string according to https://sites.google.com/a/usapiens.com/opnode/time-zones
+#define TZ_INFO "CET-1CEST,M3.5.0,M10.5.0/3"
+
+InfluxDBClient client(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN, InfluxDbCloud2CACert);
+
+// Sensor name on dashboard
+Point sensor("atmo_001");
+
 /* Configure the BSEC library with information about the sensor
     18v/33v = Voltage at Vdd. 1.8V or 3.3V
     3s/300s = BSEC operating mode, BSEC_SAMPLE_RATE_LP or BSEC_SAMPLE_RATE_ULP
@@ -28,20 +49,17 @@ void errLeds(void);
 void loadState(void);
 void updateState(void);
 
-
-
  
 // Create an object of the class Bsec
 Bsec iaqSensor;
 uint8_t bsecState[BSEC_MAX_STATE_BLOB_SIZE] = {0};
 uint16_t stateUpdateCounter = 0;
  
-String output = {};
-
 
 //
 void takeMeasurement(void);
 TickTwo timerMeasurement(takeMeasurement, 3000, 0, MILLIS); 
+
 
  
 void setup(void)
@@ -96,64 +114,37 @@ void checkIaqSensorStatus(void)
   {
     if (iaqSensor.status < BSEC_OK)
     {
-      output = "BSEC error code : " + String(iaqSensor.status);
-      Serial.println(output);
       ESP.restart();
       /* Restart in case of failure */
-    }
-    else
-    {
-      output = "BSEC warning code : " + String(iaqSensor.status);
-      Serial.println(output);
     }
   }
  
   if (iaqSensor.bme680Status != BME680_OK)
   {
     if (iaqSensor.bme680Status < BME680_OK)
-    {
-      output = "BME680 error code : " + String(iaqSensor.bme680Status);
-      Serial.println(output);
+    {     
       ESP.restart();
       /* Restart in case of failure */
-    }
-    else
-    {
-      output = "BME680 warning code : " + String(iaqSensor.bme680Status);
-      Serial.println(output);
     }
   }
 }
 
-void errLeds(void)
-{
-  pinMode(LED_BUILTIN, OUTPUT);
-  digitalWrite(LED_BUILTIN, HIGH);
-  delay(100);
-  digitalWrite(LED_BUILTIN, LOW);
-  delay(100);
-}
 
 void loadState(void)
 {
   if (EEPROM.read(0) == BSEC_MAX_STATE_BLOB_SIZE) {
     // Existing state in EEPROM
-    Serial.println("Reading state from EEPROM");
-
     for (uint8_t i = 0; i < BSEC_MAX_STATE_BLOB_SIZE; i++) {
       bsecState[i] = EEPROM.read(i + 1);
-      //Serial.println(bsecState[i], HEX);
     }
-
     iaqSensor.setState(bsecState);
     checkIaqSensorStatus();
-  } else {
+  } 
+  else 
+  {
     // Erase the EEPROM with zeroes
-    Serial.println("Erasing EEPROM");
-
     for (uint8_t i = 0; i < BSEC_MAX_STATE_BLOB_SIZE + 1; i++)
       EEPROM.write(i, 0);
-
     EEPROM.commit();
   }
 }
@@ -178,8 +169,6 @@ void updateState(void)
   if (update) {
     iaqSensor.getState(bsecState);
     checkIaqSensorStatus();
-
-    //Serial.println("Writing state to EEPROM");
 
     for (uint8_t i = 0; i < BSEC_MAX_STATE_BLOB_SIZE ; i++) {
       EEPROM.write(i + 1, bsecState[i]);
@@ -208,23 +197,20 @@ void takeMeasurement(void)
   if (iaqSensor.run()) // If new data is available
   { 
     double dewPoint = (dewPointFast(iaqSensor.temperature, iaqSensor.humidity));
-    output = "{";
-    output += String("'time_trigger': ") + String(time_trigger);
-    output += ", " + String("'rawTemperature': ") + String(iaqSensor.rawTemperature);
-    output += ", " + String("'pressure': ") + String(iaqSensor.pressure);
-    output += ", " + String("'rawHumidity': ") + String(iaqSensor.rawHumidity);
-    output += ", " + String("'gasResistance': ") + String(iaqSensor.gasResistance);
-    output += ", " + String("'iaq': ") + String(iaqSensor.iaq);
-    output += ", " + String("'iaqAccuracy': ") + String(iaqSensor.iaqAccuracy);
-    output += ", " + String("'temperature': ") + String(iaqSensor.temperature);
-    output += ", " + String("'humidity': ") + String(iaqSensor.humidity);
-    output += ", " + String("'dewPoint': ") + String(dewPoint);
-    output += ", " + String("'staticIaq': ") + String(iaqSensor.staticIaq);
-    output += ", " + String("'co2Equivalent': ") + String(iaqSensor.co2Equivalent);
-    output += ", " + String("'breathVocEquivalent': ") + String(iaqSensor.breathVocEquivalent);
-    output += "}";
-    
-    Serial.println(output);
+    sensor.clearFields();
+    sensor.addField("time_trigger", String(time_trigger));
+    sensor.addField("rawTemperature", String(iaqSensor.rawTemperature));
+    sensor.addField("pressure", String(iaqSensor.pressure));
+    sensor.addField("rawHumidity", String(iaqSensor.rawHumidity));
+    sensor.addField("gasResistance", String(iaqSensor.gasResistance));
+    sensor.addField("iaq", String(iaqSensor.iaq));
+    sensor.addField("iaqAccuracy", String(iaqSensor.iaqAccuracy));
+    sensor.addField("temperature", String(iaqSensor.temperature));
+    sensor.addField("humidity", String(iaqSensor.humidity));
+    sensor.addField("dewPoint", String(dewPoint));
+    sensor.addField("staticIaq", String(iaqSensor.staticIaq));
+    sensor.addField("co2Equivalent", String(iaqSensor.co2Equivalent));
+    sensor.addField("breathVocEquivalent", String(iaqSensor.breathVocEquivalent));
     
     updateState();        
   } 
