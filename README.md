@@ -2,6 +2,8 @@
 Air quality monitor based on esp8266 and bme680.
 Portable.
 Uses WiFi connection to send data.
+Use attached python script to save copy of data collected by bme680 to local sqlite database.
+
 
 ![alt text](https://github.com/dawmro/esp8266_bme680/blob/main/images/data_on_dashboard.PNG?raw=true)
 
