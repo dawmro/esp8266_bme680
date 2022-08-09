@@ -9,12 +9,14 @@ ESP8266WiFiMulti wifiMulti;
 #include <InfluxDbClient.h>
 #include <InfluxDbCloud.h>
 
+
 #define WIFI_SSID "your-ssid"
 #define WIFI_PASSWORD "your-wifi-password"
 #define INFLUXDB_URL "https://europe-west1-1.gcp.cloud2.influxdata.com"
 #define INFLUXDB_TOKEN "your-INFLUXDB_TOKEN"
 #define INFLUXDB_ORG "your-INFLUXDB_ORG"
 #define INFLUXDB_BUCKET "your-INFLUXDB_BUCKET"
+
 
 // Set timezone string according to https://sites.google.com/a/usapiens.com/opnode/time-zones
 #define TZ_INFO "CET-1CEST,M3.5.0,M10.5.0/3"
@@ -23,6 +25,8 @@ InfluxDBClient client(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKE
 
 // Sensor name on dashboard
 Point sensor("atmo_001");
+
+String output = "{}";
 
 /* Configure the BSEC library with information about the sensor
     18v/33v = Voltage at Vdd. 1.8V or 3.3V
@@ -104,12 +108,10 @@ void setup(void)
   WiFi.mode(WIFI_STA);
   wifiMulti.addAP(WIFI_SSID, WIFI_PASSWORD);
 
-  Serial.print("Connecting to wifi");
-  while (wifiMulti.run() != WL_CONNECTED) {
-    Serial.print(".");
+  while (wifiMulti.run() != WL_CONNECTED) 
+  {
     delay(500);
   }
-  Serial.println();
 
   // Get accurate time
   timeSync(TZ_INFO, "pool.ntp.org", "time.nis.gov");
@@ -128,6 +130,26 @@ void setup(void)
 void loop(void)
 { 
   timerMeasurement.update();
+
+  // Checking if there is some data on serial
+  if(Serial.available() > 0)
+  {
+    // Reading all characters until ;
+    String recieved = Serial.readStringUntil(';');
+
+    //-------Handshake---------
+    if (recieved == "who_are_you") 
+    {
+      Serial.println("esp8266_bme680");
+    }
+    
+  
+    //-------BME680 data request---------
+    else if (recieved == "Get BME680 data") 
+    {
+      Serial.println(output);
+    }
+  }
 }
  
 // Helper function definitions
@@ -234,25 +256,34 @@ void takeMeasurement(void)
     sensor.addField("staticIaq", iaqSensor.staticIaq);
     sensor.addField("co2Equivalent", iaqSensor.co2Equivalent);
     sensor.addField("breathVocEquivalent", iaqSensor.breathVocEquivalent);
+
+    output = "{";
+    output += String("'sensorName': ") + String("'Bosch BME680'");
+    output += ", " + String("'time_trigger': ") + String(time_trigger);
+    output += ", " + String("'rawTemperature': ") + String(iaqSensor.rawTemperature);
+    output += ", " + String("'pressure': ") + String(iaqSensor.pressure);
+    output += ", " + String("'rawHumidity': ") + String(iaqSensor.rawHumidity);
+    output += ", " + String("'gasResistance': ") + String(iaqSensor.gasResistance);
+    output += ", " + String("'iaq': ") + String(iaqSensor.iaq);
+    output += ", " + String("'iaqAccuracy': ") + String(iaqSensor.iaqAccuracy);
+    output += ", " + String("'temperature': ") + String(iaqSensor.temperature);
+    output += ", " + String("'humidity': ") + String(iaqSensor.humidity);
+    output += ", " + String("'dewPoint': ") + String(dewPoint);
+    output += ", " + String("'staticIaq': ") + String(iaqSensor.staticIaq);
+    output += ", " + String("'co2Equivalent': ") + String(iaqSensor.co2Equivalent);
+    output += ", " + String("'breathVocEquivalent': ") + String(iaqSensor.breathVocEquivalent);
+    output += "}";
     
     updateState();
 
-    Serial.print("Writing: ");
-    Serial.println(client.pointToLineProtocol(sensor));
+    // Add points
+    client.pointToLineProtocol(sensor);
     
-    // If no Wifi signal, try to reconnect
-    if (wifiMulti.run() != WL_CONNECTED) 
-    {
-      Serial.println("Wifi connection lost");
-    }
-    
+    // Reconnect
+    wifiMulti.run();
+
     // Write point
-    if (!client.writePoint(sensor)) 
-    {
-      Serial.print("InfluxDB write failed: ");
-      Serial.println(client.getLastErrorMessage());
-    }  
-         
+    client.writePoint(sensor);      
   } 
   else
   {
