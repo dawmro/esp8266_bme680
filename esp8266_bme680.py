@@ -161,7 +161,7 @@ def main():
                 continue
             print(tStamp() + " Checking if serial port is open: " + str(serialcomm.isOpen()))
             
-            my_dict = {"rigName": hostname, "timeNow": datetime.utcnow()}
+            my_dict = {"rigName": hostname, "timeNow": str(int(time.time()))}
             my_dict.update(get_bme680_data(my_dict, serialcomm))
             
 
